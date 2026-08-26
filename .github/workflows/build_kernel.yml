@@ -19,14 +19,14 @@ jobs:
         run: |
           cd kernel
           sed -i 's/#define POLICYDB_VERSION_MAX.*/#define POLICYDB_VERSION_MAX 34/g' security/selinux/ss/policydb.h
-          sed -i 's/CONFIG_SECURITY_SELINUX_DEVELOP=y/CONFIG_SECURITY_SELINUX_DEVELOP=y\nCONFIG_SECURITY_SELINUX_BOOTPARAM=y\nCONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=0/g' arch/arm/configs/exynos3475-j1xlte_defconfig
+          sed -i 's/CONFIG_SECURITY_SELINUX_DEVELOP=y/CONFIG_SECURITY_SELINUX_DEVELOP=y\nCONFIG_SECURITY_SELINUX_BOOTPARAM=y\nCONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=0/g' arch/arm/configs/lineage-j1xlte_defconfig
 
       - name: Compile Kernel zImage
         run: |
           cd kernel
           export ARCH=arm
           export CROSS_COMPILE=arm-linux-gnueabi-
-          make exynos3475-j1xlte_defconfig
+          make lineage-j1xlte_defconfig
           make -j$(nproc) zImage
 
       - name: Upload Finished Kernel Artifact
