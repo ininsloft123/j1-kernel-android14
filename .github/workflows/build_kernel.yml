@@ -30,8 +30,8 @@ jobs:
           printf '#define __NR_epoll_pwait2 (__NR_SYSCALL_BASE+441)\n' >> arch/arm/include/uapi/asm/unistd.h
           python3 - << 'PYEOF'
           with open('arch/arm/kernel/calls.S', 'a') as f:
-              f.write('\n/* Android 14 compat stubs (386-443) */\n')
-              for i in range(386, 444):
+              f.write('\n/* Android 14 compat stubs (388-443) */\n')
+              for i in range(388, 444):
                   f.write(f'/* {i} */\tCALL(sys_ni_syscall)\n')
           PYEOF
           echo "CONFIG_SECURITY_SELINUX_BOOTPARAM=y" >> arch/arm/configs/lineage-j1xlte_defconfig
