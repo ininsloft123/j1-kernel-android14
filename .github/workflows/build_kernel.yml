@@ -23,11 +23,9 @@ jobs:
         run: |
           cd kernel
 
-          # 0. SPOOF kernel version to 4.14.180 so Android 14 init passes minimum version check
-          sed -i 's/^VERSION = 3$/VERSION = 4/' Makefile
-          sed -i 's/^PATCHLEVEL = 10$/PATCHLEVEL = 14/' Makefile
-          sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 180/' Makefile
-          echo "[*] Kernel version spoofed to 4.14.180"
+          # 0. Disable exFAT (API mismatches with 3.10, not needed for Android 14)
+          sed -i 's/CONFIG_EXFAT_FS=y/# CONFIG_EXFAT_FS is not set/' arch/arm/configs/lineage-j1xlte_defconfig
+          echo "# CONFIG_EXFAT_FS is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
 
           # 1. Allow SELinux Policy version 34 (Android 14)
           sed -i 's/#define POLICYDB_VERSION_MAX.*/#define POLICYDB_VERSION_MAX 34/' security/selinux/ss/policydb.h
@@ -49,7 +47,7 @@ jobs:
                   f.write(f'/* {i} */\tCALL(sys_ni_syscall)\n')
           PYEOF
 
-          # 5. Enable permissive SELinux + Android 14 required cgroup configs
+          # 5. Enable SELinux permissive + Android 14 required cgroup configs
           echo "CONFIG_SECURITY_SELINUX_BOOTPARAM=y" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=0" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_SECURITY_SELINUX_DEVELOP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
@@ -68,6 +66,21 @@ jobs:
           export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/arm-linux-androideabi-
           make lineage-j1xlte_defconfig
           make -j$(nproc) zImage
+
+          # Binary-patch version string: uname() reports 4.14 to Android 14 init
+          # Internal LINUX_VERSION_CODE stays 3.10 so all driver #ifdefs compile correctly
+          python3 -c "
+data = open('arch/arm/boot/zImage', 'rb').read()
+old = b'3.10.'
+new = b'4.14.'
+idx = data.find(old)
+if idx >= 0:
+    data = data[:idx] + new + data[idx+5:]
+    open('arch/arm/boot/zImage', 'wb').write(data)
+    print('OK: Patched utsrelease 3.10 -> 4.14 in zImage')
+else:
+    print('WARN: version string not found')
+"
 
       - name: Upload Finished Kernel Artifact
         uses: actions/upload-artifact@v4
