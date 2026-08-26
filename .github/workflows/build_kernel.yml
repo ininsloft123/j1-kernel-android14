@@ -15,9 +15,9 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git toolchain
 
-      - name: Clone Exynos 3475 Kernel Source
+      - name: Clone kOtusin Lineage 19.1 Kernel Source
         run: |
-          git clone --depth=1 https://github.com/Exynos3475/android_kernel_samsung_exynos3475.git -b lineage-17.1 kernel
+          git clone --depth=1 https://github.com/kOtusin/android_kernel_samsung_exynos3475.git -b lineage-19.1 kernel
 
       - name: Apply Android 14 SELinux & Syscall Patches
         run: |
