@@ -22,21 +22,39 @@ jobs:
       - name: Apply Android 14 Syscall & SELinux Patches
         run: |
           cd kernel
+
+          # 1. Allow SELinux Policy version 34 (Android 14)
           sed -i 's/#define POLICYDB_VERSION_MAX.*/#define POLICYDB_VERSION_MAX 34/' security/selinux/ss/policydb.h
+
+          # 2. Update __NR_syscalls from 388 to 444
           sed -i 's/#define __NR_syscalls  (388)/#define __NR_syscalls  (444)/' arch/arm/include/asm/unistd.h
+
+          # 3. Add Android 14 missing syscall defines
           printf '\n/* Android 14 syscalls backported for kernel 3.10 */\n' >> arch/arm/include/uapi/asm/unistd.h
           printf '#define __NR_clone3       (__NR_SYSCALL_BASE+435)\n' >> arch/arm/include/uapi/asm/unistd.h
           printf '#define __NR_faccessat2   (__NR_SYSCALL_BASE+439)\n' >> arch/arm/include/uapi/asm/unistd.h
           printf '#define __NR_epoll_pwait2 (__NR_SYSCALL_BASE+441)\n' >> arch/arm/include/uapi/asm/unistd.h
+
+          # 4. Append entries 388..443 to calls.S
           python3 - << 'PYEOF'
           with open('arch/arm/kernel/calls.S', 'a') as f:
               f.write('\n/* Android 14 compat stubs (388-443) */\n')
               for i in range(388, 444):
                   f.write(f'/* {i} */\tCALL(sys_ni_syscall)\n')
           PYEOF
+
+          # 5. Enable permissive SELinux + Android 14 required cgroup configs
           echo "CONFIG_SECURITY_SELINUX_BOOTPARAM=y" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=0" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_SECURITY_SELINUX_DEVELOP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          # Android 14 init REQUIRES MEMCG, CGROUP_DEVICE, BLK_CGROUP - without these it fatally crashes
+          echo "CONFIG_MEMCG=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_MEMCG_SWAP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_CGROUP_DEVICE=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_BLK_CGROUP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_NET_CLS_CGROUP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_NETPRIO_CGROUP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_PSTORE_CONSOLE=y" >> arch/arm/configs/lineage-j1xlte_defconfig
 
       - name: Compile Kernel zImage
         run: |
