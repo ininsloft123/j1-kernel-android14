@@ -13,7 +13,7 @@ jobs:
 
       - name: Clone Exynos 3475 Kernel Source
         run: |
-          git clone https://github.com/Exynos3475/android_kernel_samsung_exynos3475.git -b lineage-19.1 kernel
+          git clone https://github.com/kOtusin/android_kernel_samsung_exynos3475.git -b lineage-19.1 kernel
 
       - name: Apply Android 14 SELinux & Syscall Patches
         run: |
