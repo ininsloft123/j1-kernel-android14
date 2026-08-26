@@ -23,6 +23,12 @@ jobs:
         run: |
           cd kernel
 
+          # 0. SPOOF kernel version to 4.14.180 so Android 14 init passes minimum version check
+          sed -i 's/^VERSION = 3$/VERSION = 4/' Makefile
+          sed -i 's/^PATCHLEVEL = 10$/PATCHLEVEL = 14/' Makefile
+          sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 180/' Makefile
+          echo "[*] Kernel version spoofed to 4.14.180"
+
           # 1. Allow SELinux Policy version 34 (Android 14)
           sed -i 's/#define POLICYDB_VERSION_MAX.*/#define POLICYDB_VERSION_MAX 34/' security/selinux/ss/policydb.h
 
@@ -47,7 +53,6 @@ jobs:
           echo "CONFIG_SECURITY_SELINUX_BOOTPARAM=y" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=0" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_SECURITY_SELINUX_DEVELOP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
-          # Android 14 init REQUIRES MEMCG, CGROUP_DEVICE, BLK_CGROUP - without these it fatally crashes
           echo "CONFIG_MEMCG=y" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_MEMCG_SWAP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_CGROUP_DEVICE=y" >> arch/arm/configs/lineage-j1xlte_defconfig
