@@ -1,0 +1,36 @@
+name: Build Android 14 Kernel for Galaxy J1 2016
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install Toolchain & Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential gcc-arm-linux-gnueabi libncurses5-dev bison flex libssl-dev bc ccache git
+
+      - name: Clone Exynos 3475 Kernel Source
+        run: |
+          git clone https://github.com/Exynos3475/android_kernel_samsung_exynos3475.git -b lineage-19.1 kernel
+
+      - name: Apply Android 14 SELinux & Syscall Patches
+        run: |
+          cd kernel
+          sed -i 's/#define POLICYDB_VERSION_MAX.*/#define POLICYDB_VERSION_MAX 34/g' security/selinux/ss/policydb.h
+          sed -i 's/CONFIG_SECURITY_SELINUX_DEVELOP=y/CONFIG_SECURITY_SELINUX_DEVELOP=y\nCONFIG_SECURITY_SELINUX_BOOTPARAM=y\nCONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=0/g' arch/arm/configs/exynos3475-j1xlte_defconfig
+
+      - name: Compile Kernel zImage
+        run: |
+          cd kernel
+          export ARCH=arm
+          export CROSS_COMPILE=arm-linux-gnueabi-
+          make exynos3475-j1xlte_defconfig
+          make -j$(nproc) zImage
+
+      - name: Upload Finished Kernel Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zImage-Android14
+          path: kernel/arch/arm/boot/zImage
