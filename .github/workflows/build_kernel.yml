@@ -17,20 +17,22 @@ jobs:
 
       - name: Clone Exynos 3475 Kernel Source
         run: |
-          git clone https://github.com/Exynos3475/android_kernel_samsung_exynos3475.git -b lineage-19.1 kernel
+          git clone --depth=1 https://github.com/Exynos3475/android_kernel_samsung_exynos3475.git -b lineage-17.1 kernel
 
       - name: Apply Android 14 SELinux & Syscall Patches
         run: |
           cd kernel
+          # Allow SELinux Policy version 34 (Android 14)
           sed -i 's/#define POLICYDB_VERSION_MAX.*/#define POLICYDB_VERSION_MAX 34/g' security/selinux/ss/policydb.h
-          sed -i 's/CONFIG_SECURITY_SELINUX_DEVELOP=y/CONFIG_SECURITY_SELINUX_DEVELOP=y\nCONFIG_SECURITY_SELINUX_BOOTPARAM=y\nCONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=0/g' arch/arm/configs/exynos3475-j1xlte_defconfig
+          # Enable permissive mode in kernel config
+          sed -i 's/CONFIG_SECURITY_SELINUX_DEVELOP=y/CONFIG_SECURITY_SELINUX_DEVELOP=y\nCONFIG_SECURITY_SELINUX_BOOTPARAM=y\nCONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=0/g' arch/arm/configs/lineage-j1xlte_defconfig
 
       - name: Compile Kernel zImage
         run: |
           cd kernel
           export ARCH=arm
-          export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/arm-linux-androideabi-
-          make exynos3475-j1xlte_defconfig
+          export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/arm-linux-androidkernel-
+          make lineage-j1xlte_defconfig
           make -j$(nproc) zImage
 
       - name: Upload Finished Kernel Artifact
