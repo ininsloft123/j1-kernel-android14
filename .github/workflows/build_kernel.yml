@@ -49,23 +49,21 @@ jobs:
           sed -i 's/UTS_RELEASE/"4.14.180"/' init/version.c
 
           # 6. Enable Persistent Ramoops Logger & Android 14 Cgroup configs
-          cat >> arch/arm/configs/lineage-j1xlte_defconfig << 'EOF'
-CONFIG_SECURITY_SELINUX_BOOTPARAM=y
-CONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=0
-CONFIG_SECURITY_SELINUX_DEVELOP=y
-CONFIG_MEMCG=y
-CONFIG_MEMCG_SWAP=y
-CONFIG_CGROUP_DEVICE=y
-CONFIG_BLK_CGROUP=y
-CONFIG_NET_CLS_CGROUP=y
-CONFIG_NETPRIO_CGROUP=y
-CONFIG_PSTORE=y
-CONFIG_PSTORE_CONSOLE=y
-CONFIG_PSTORE_PMSG=y
-CONFIG_PSTORE_RAM=y
-CONFIG_CMDLINE_EXTEND=y
-CONFIG_CMDLINE="ramoops.mem_address=0x26000000 ramoops.mem_size=0x200000 ramoops.console_size=0x100000 ramoops.dump_oops=1 androidboot.selinux=permissive enforcing=0"
-EOF
+          echo "CONFIG_SECURITY_SELINUX_BOOTPARAM=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=0" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_SECURITY_SELINUX_DEVELOP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_MEMCG=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_MEMCG_SWAP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_CGROUP_DEVICE=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_BLK_CGROUP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_NET_CLS_CGROUP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_NETPRIO_CGROUP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_PSTORE=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_PSTORE_CONSOLE=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_PSTORE_PMSG=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_PSTORE_RAM=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_CMDLINE_EXTEND=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo 'CONFIG_CMDLINE="ramoops.mem_address=0x26000000 ramoops.mem_size=0x200000 ramoops.console_size=0x100000 ramoops.dump_oops=1 androidboot.selinux=permissive enforcing=0"' >> arch/arm/configs/lineage-j1xlte_defconfig
 
       - name: Compile Kernel zImage
         run: |
