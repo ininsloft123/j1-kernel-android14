@@ -19,7 +19,7 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/kOtusin/android_kernel_samsung_exynos3475.git -b lineage-19.1 kernel
 
-      - name: Apply Android 14 Patches
+      - name: Apply Android 14 & Persistent Ramoops Logger Patches
         run: |
           cd kernel
 
@@ -45,17 +45,27 @@ jobs:
             echo "/* $i */	CALL(sys_ni_syscall)" >> arch/arm/kernel/calls.S
           done
 
-          # 5. Enable permissive SELinux + Android 14 required cgroup kernel configs
-          echo "CONFIG_SECURITY_SELINUX_BOOTPARAM=y" >> arch/arm/configs/lineage-j1xlte_defconfig
-          echo "CONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=0" >> arch/arm/configs/lineage-j1xlte_defconfig
-          echo "CONFIG_SECURITY_SELINUX_DEVELOP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
-          echo "CONFIG_MEMCG=y" >> arch/arm/configs/lineage-j1xlte_defconfig
-          echo "CONFIG_MEMCG_SWAP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
-          echo "CONFIG_CGROUP_DEVICE=y" >> arch/arm/configs/lineage-j1xlte_defconfig
-          echo "CONFIG_BLK_CGROUP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
-          echo "CONFIG_NET_CLS_CGROUP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
-          echo "CONFIG_NETPRIO_CGROUP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
-          echo "CONFIG_PSTORE_CONSOLE=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          # 5. Patch kernel version banner in init/version.c so uname() returns 4.14.180 to userspace
+          sed -i 's/UTS_RELEASE/"4.14.180"/' init/version.c
+
+          # 6. Enable Persistent Ramoops Logger & Android 14 Cgroup configs
+          cat >> arch/arm/configs/lineage-j1xlte_defconfig << 'EOF'
+CONFIG_SECURITY_SELINUX_BOOTPARAM=y
+CONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=0
+CONFIG_SECURITY_SELINUX_DEVELOP=y
+CONFIG_MEMCG=y
+CONFIG_MEMCG_SWAP=y
+CONFIG_CGROUP_DEVICE=y
+CONFIG_BLK_CGROUP=y
+CONFIG_NET_CLS_CGROUP=y
+CONFIG_NETPRIO_CGROUP=y
+CONFIG_PSTORE=y
+CONFIG_PSTORE_CONSOLE=y
+CONFIG_PSTORE_PMSG=y
+CONFIG_PSTORE_RAM=y
+CONFIG_CMDLINE_EXTEND=y
+CONFIG_CMDLINE="ramoops.mem_address=0x26000000 ramoops.mem_size=0x200000 ramoops.console_size=0x100000 ramoops.dump_oops=1 androidboot.selinux=permissive enforcing=0"
+EOF
 
       - name: Compile Kernel zImage
         run: |
@@ -65,13 +75,8 @@ jobs:
           make lineage-j1xlte_defconfig
           make -j$(nproc) zImage
 
-      - name: Patch Kernel Version in zImage
-        run: |
-          cd kernel
-          python3 -c "d=open('arch/arm/boot/zImage','rb').read();open('arch/arm/boot/zImage','wb').write(d.replace(b'3.10.',b'4.14.',1)) if b'3.10.' in d else print('no 3.10')"
-
       - name: Upload Kernel Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: zImage-Android14
+          name: zImage-Android14-Logger
           path: kernel/arch/arm/boot/zImage
