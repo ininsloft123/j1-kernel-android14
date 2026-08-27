@@ -19,7 +19,7 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/kOtusin/android_kernel_samsung_exynos3475.git -b lineage-19.1 kernel
 
-      - name: Apply Android 14 & Persistent Ramoops Logger Patches
+      - name: Apply Android 14, Force Permissive SELinux & Hardware Patches
         run: |
           cd kernel
 
@@ -30,25 +30,30 @@ jobs:
           # 1. Allow SELinux Policy version 34 (Android 14 requirement)
           sed -i 's/#define POLICYDB_VERSION_MAX.*/#define POLICYDB_VERSION_MAX 34/' security/selinux/ss/policydb.h
 
-          # 2. Extend syscall table to 444 entries (Android 14 Bionic requirement)
+          # 2. Force SELinux to always remain in PERMISSIVE mode (ignores Samsung S-Boot enforcing lock)
+          sed -i 's/int selinux_enforcing;/int selinux_enforcing = 0;/' security/selinux/hooks.c
+          sed -i 's/selinux_enforcing = enforcing ? 1 : 0;/selinux_enforcing = 0;/' security/selinux/hooks.c
+          sed -i 's/selinux_enforcing = new_value;/selinux_enforcing = 0;/' security/selinux/selinuxfs.c
+
+          # 3. Extend syscall table to 444 entries (Android 14 Bionic requirement)
           sed -i 's/#define __NR_syscalls  (388)/#define __NR_syscalls  (444)/' arch/arm/include/asm/unistd.h
 
-          # 3. Add Android 14 missing syscall number defines
+          # 4. Add Android 14 missing syscall number defines
           printf '\n/* Android 14 syscalls backported */\n' >> arch/arm/include/uapi/asm/unistd.h
           printf '#define __NR_clone3       (__NR_SYSCALL_BASE+435)\n' >> arch/arm/include/uapi/asm/unistd.h
           printf '#define __NR_faccessat2   (__NR_SYSCALL_BASE+439)\n' >> arch/arm/include/uapi/asm/unistd.h
           printf '#define __NR_epoll_pwait2 (__NR_SYSCALL_BASE+441)\n' >> arch/arm/include/uapi/asm/unistd.h
 
-          # 4. Add 56 stub entries to calls.S (388 to 443)
+          # 5. Add 56 stub entries to calls.S (388 to 443)
           printf '\n/* Android 14 compat stubs (388-443) */\n' >> arch/arm/kernel/calls.S
           for i in $(seq 388 443); do
             echo "/* $i */	CALL(sys_ni_syscall)" >> arch/arm/kernel/calls.S
           done
 
-          # 5. Patch kernel version banner in init/version.c so uname() returns 4.14.180 to userspace
+          # 6. Patch kernel version banner in init/version.c so uname() returns 4.14.180 to userspace
           sed -i 's/UTS_RELEASE/"4.14.180"/' init/version.c
 
-          # 6. Enable Persistent Ramoops Logger & Android 14 Cgroup configs
+          # 7. Enable Persistent Ramoops Logger & Android 14 Cgroup configs
           echo "CONFIG_SECURITY_SELINUX_BOOTPARAM=y" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=0" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_SECURITY_SELINUX_DEVELOP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
@@ -76,5 +81,5 @@ jobs:
       - name: Upload Kernel Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: zImage-Android14-Logger
+          name: zImage-Android14-Permissive
           path: kernel/arch/arm/boot/zImage
