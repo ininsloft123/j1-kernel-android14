@@ -1,4 +1,4 @@
-name: Build Clean Android 12 Kernel with Camera Fix
+name: Build Compact Android 12 Kernel with Camera Fix
 
 on: [push, workflow_dispatch]
 
@@ -9,7 +9,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential libncurses5-dev bison flex libssl-dev bc ccache git lzop device-tree-compiler
+          sudo apt install -y build-essential libncurses5-dev bison flex libssl-dev bc ccache git lzop lz4 device-tree-compiler
 
       - name: Clone Google Android GCC 4.9 Toolchain
         run: |
@@ -19,19 +19,25 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/kOtusin/android_kernel_samsung_exynos3475.git -b lineage-19.1 kernel
 
-      - name: Apply Camera FLITE IRQ Sharing & DTS Standby Fixes
+      - name: Apply Camera FLITE IRQ Sharing, DTS Standby & Size Optimizations
         run: |
           cd kernel
 
-          # 1. Disable exFAT (known GCC 4.9 compile issue with 3.10)
+          # 1. Disable exFAT (GCC 4.9 compile issue with 3.10)
           sed -i 's/CONFIG_EXFAT_FS=y/# CONFIG_EXFAT_FS is not set/' arch/arm/configs/lineage-j1xlte_defconfig
           echo "# CONFIG_EXFAT_FS is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
 
-          # 2. Patch Camera FIMC-IS FLITE IRQF_SHARED
+          # 2. Enable LZO Kernel Compression to match stock 5.45MB size (prevents S-Boot splash hang)
+          sed -i 's/CONFIG_KERNEL_GZIP=y/# CONFIG_KERNEL_GZIP is not set/' arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_KERNEL_LZO=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_HAVE_KERNEL_LZO=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+          echo "CONFIG_RD_LZO=y" >> arch/arm/configs/lineage-j1xlte_defconfig
+
+          # 3. Patch Camera FIMC-IS FLITE IRQF_SHARED
           find drivers/media/ -name "*flite*.c" -exec sed -i 's/request_irq(\([^,]*\), \([^,]*\), 0,/request_irq(\1, \2, IRQF_SHARED,/' {} + 2>/dev/null || true
           find drivers/media/ -name "*sensor*.c" -exec sed -i 's/request_irq(\([^,]*\), \([^,]*\), 0,/request_irq(\1, \2, IRQF_SHARED,/' {} + 2>/dev/null || true
 
-          # 3. Patch Device Tree Camera GPIO Standby Pins to GPF0
+          # 4. Patch Device Tree Camera GPIO Standby Pins to GPF0
           find arch/arm/boot/dts/ -name "*3475*.dts*" -exec sed -i 's/gpio_standby = <&gpc2 [0-9] [0-9]>/gpio_standby = <\&gpf0 2 1>/' {} + 2>/dev/null || true
 
       - name: Compile Kernel zImage and DTBs
@@ -43,10 +49,10 @@ jobs:
           make -j$(nproc) zImage
           make -j$(nproc) dtbs
 
-      - name: Upload Clean Kernel Artifact
+      - name: Upload Compact Kernel Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: zImage-Camera-Clean
+          name: zImage-Camera-Compact
           path: |
             kernel/arch/arm/boot/zImage
             kernel/arch/arm/boot/dts/*.dtb
