@@ -24,21 +24,38 @@ jobs:
           cd kernel
 
           # 1. Disable exFAT (GCC 4.9 compile issue with 3.10)
-          sed -i 's/CONFIG_EXFAT_FS=y/# CONFIG_EXFAT_FS is not set/' arch/arm/configs/lineage-j1xlte_defconfig
+          sed -i '/CONFIG_EXFAT_FS/d' arch/arm/configs/lineage-j1xlte_defconfig
           echo "# CONFIG_EXFAT_FS is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
 
-          # 2. Enable LZO Kernel Compression to match stock 5.45MB size (prevents S-Boot splash hang)
-          sed -i 's/CONFIG_KERNEL_GZIP=y/# CONFIG_KERNEL_GZIP is not set/' arch/arm/configs/lineage-j1xlte_defconfig
+          # 2. Force LZO Kernel Compression to keep zImage under 5.5MB (prevents S-Boot splash hang)
+          # Remove all existing compression options first
+          sed -i '/CONFIG_KERNEL_GZIP/d' arch/arm/configs/lineage-j1xlte_defconfig
+          sed -i '/CONFIG_KERNEL_LZMA/d' arch/arm/configs/lineage-j1xlte_defconfig
+          sed -i '/CONFIG_KERNEL_XZ/d' arch/arm/configs/lineage-j1xlte_defconfig
+          sed -i '/CONFIG_KERNEL_LZ4/d' arch/arm/configs/lineage-j1xlte_defconfig
+          sed -i '/CONFIG_KERNEL_LZO/d' arch/arm/configs/lineage-j1xlte_defconfig
+          sed -i '/CONFIG_KERNEL_BZIP2/d' arch/arm/configs/lineage-j1xlte_defconfig
+          # Force LZO only
+          echo "# CONFIG_KERNEL_GZIP is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_KERNEL_LZO=y" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_HAVE_KERNEL_LZO=y" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_RD_LZO=y" >> arch/arm/configs/lineage-j1xlte_defconfig
 
-          # 3. Patch Camera FIMC-IS FLITE IRQF_SHARED
-          find drivers/media/ -name "*flite*.c" -exec sed -i 's/request_irq(\([^,]*\), \([^,]*\), 0,/request_irq(\1, \2, IRQF_SHARED,/' {} + 2>/dev/null || true
-          find drivers/media/ -name "*sensor*.c" -exec sed -i 's/request_irq(\([^,]*\), \([^,]*\), 0,/request_irq(\1, \2, IRQF_SHARED,/' {} + 2>/dev/null || true
+          # 3. Disable DEBUG symbols to reduce size
+          sed -i '/CONFIG_DEBUG_KERNEL/d' arch/arm/configs/lineage-j1xlte_defconfig
+          echo "# CONFIG_DEBUG_KERNEL is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
+          sed -i '/CONFIG_DEBUG_INFO/d' arch/arm/configs/lineage-j1xlte_defconfig
+          echo "# CONFIG_DEBUG_INFO is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
 
-          # 4. Patch Device Tree Camera GPIO Standby Pins to GPF0
-          find arch/arm/boot/dts/ -name "*3475*.dts*" -exec sed -i 's/gpio_standby = <&gpc2 [0-9] [0-9]>/gpio_standby = <\&gpf0 2 1>/' {} + 2>/dev/null || true
+          # 4. Patch Camera FIMC-IS FLITE IRQF_SHARED (fixes FD leak on /dev/video101)
+          find drivers/media/ -name "*flite*.c" -exec sed -i 's/request_irq(\([^,]*\), \([^,]*\), 0,/request_irq(\1, \2, IRQF_SHARED,/g' {} +
+          find drivers/media/ -name "*sensor*.c" -exec sed -i 's/request_irq(\([^,]*\), \([^,]*\), 0,/request_irq(\1, \2, IRQF_SHARED,/g' {} +
+
+          # 5. Patch Device Tree Camera GPIO Standby Pins to GPF0
+          find arch/arm/boot/dts/ -name "*3475*.dts*" -exec sed -i 's/gpio_standby = <&gpc2 [0-9] [0-9]>/gpio_standby = <\&gpf0 2 1>/g' {} +
+
+          # Print compression choice for verification
+          grep -E "CONFIG_KERNEL_(GZIP|LZO|XZ|LZ4|BZIP2)" arch/arm/configs/lineage-j1xlte_defconfig
 
       - name: Compile Kernel zImage and DTBs
         run: |
@@ -46,8 +63,11 @@ jobs:
           export ARCH=arm
           export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/arm-linux-androideabi-
           make lineage-j1xlte_defconfig
+          # Verify LZO is actually selected after olddefconfig
+          grep -E "CONFIG_KERNEL_(GZIP|LZO|XZ|LZ4|BZIP2)" .config
           make -j$(nproc) zImage
           make -j$(nproc) dtbs
+          ls -lh arch/arm/boot/zImage
 
       - name: Upload Compact Kernel Artifact
         uses: actions/upload-artifact@v4
