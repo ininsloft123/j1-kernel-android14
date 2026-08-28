@@ -19,54 +19,53 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/kOtusin/android_kernel_samsung_exynos3475.git -b lineage-19.1 kernel
 
-      - name: Apply Camera FLITE IRQ Sharing, DTS Standby & Size Optimizations
+      - name: Apply Camera FLITE IRQ Sharing and DTS Standby Patches
         run: |
           cd kernel
 
-          # 1. Disable exFAT (GCC 4.9 compile issue with 3.10)
-          sed -i '/CONFIG_EXFAT_FS/d' arch/arm/configs/lineage-j1xlte_defconfig
-          echo "# CONFIG_EXFAT_FS is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
-
-          # 2. Force LZO Kernel Compression to keep zImage under 5.5MB (prevents S-Boot splash hang)
-          # Remove all existing compression options first
-          sed -i '/CONFIG_KERNEL_GZIP/d' arch/arm/configs/lineage-j1xlte_defconfig
-          sed -i '/CONFIG_KERNEL_LZMA/d' arch/arm/configs/lineage-j1xlte_defconfig
-          sed -i '/CONFIG_KERNEL_XZ/d' arch/arm/configs/lineage-j1xlte_defconfig
-          sed -i '/CONFIG_KERNEL_LZ4/d' arch/arm/configs/lineage-j1xlte_defconfig
-          sed -i '/CONFIG_KERNEL_LZO/d' arch/arm/configs/lineage-j1xlte_defconfig
-          sed -i '/CONFIG_KERNEL_BZIP2/d' arch/arm/configs/lineage-j1xlte_defconfig
-          # Force LZO only
-          echo "# CONFIG_KERNEL_GZIP is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
-          echo "CONFIG_KERNEL_LZO=y" >> arch/arm/configs/lineage-j1xlte_defconfig
-          echo "CONFIG_HAVE_KERNEL_LZO=y" >> arch/arm/configs/lineage-j1xlte_defconfig
-          echo "CONFIG_RD_LZO=y" >> arch/arm/configs/lineage-j1xlte_defconfig
-
-          # 3. Disable DEBUG symbols to reduce size
-          sed -i '/CONFIG_DEBUG_KERNEL/d' arch/arm/configs/lineage-j1xlte_defconfig
-          echo "# CONFIG_DEBUG_KERNEL is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
-          sed -i '/CONFIG_DEBUG_INFO/d' arch/arm/configs/lineage-j1xlte_defconfig
-          echo "# CONFIG_DEBUG_INFO is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
-
-          # 4. Patch Camera FIMC-IS FLITE IRQF_SHARED (fixes FD leak on /dev/video101)
+          # Patch Camera FIMC-IS FLITE IRQF_SHARED (fixes FD leak on /dev/video101)
           find drivers/media/ -name "*flite*.c" -exec sed -i 's/request_irq(\([^,]*\), \([^,]*\), 0,/request_irq(\1, \2, IRQF_SHARED,/g' {} +
           find drivers/media/ -name "*sensor*.c" -exec sed -i 's/request_irq(\([^,]*\), \([^,]*\), 0,/request_irq(\1, \2, IRQF_SHARED,/g' {} +
 
-          # 5. Patch Device Tree Camera GPIO Standby Pins to GPF0
+          # Patch Device Tree Camera GPIO Standby Pins to GPF0
           find arch/arm/boot/dts/ -name "*3475*.dts*" -exec sed -i 's/gpio_standby = <&gpc2 [0-9] [0-9]>/gpio_standby = <\&gpf0 2 1>/g' {} +
 
-          # Print compression choice for verification
-          grep -E "CONFIG_KERNEL_(GZIP|LZO|XZ|LZ4|BZIP2)" arch/arm/configs/lineage-j1xlte_defconfig
+          # Disable exFAT (GCC 4.9 compile issue)
+          sed -i '/CONFIG_EXFAT_FS/d' arch/arm/configs/lineage-j1xlte_defconfig
+          echo "# CONFIG_EXFAT_FS is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
 
-      - name: Compile Kernel zImage and DTBs
+      - name: Generate .config, Force LZO Compression, then Build
         run: |
           cd kernel
           export ARCH=arm
           export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/arm-linux-androideabi-
+
+          # Step 1: Generate base .config
           make lineage-j1xlte_defconfig
-          # Verify LZO is actually selected after olddefconfig
-          grep -E "CONFIG_KERNEL_(GZIP|LZO|XZ|LZ4|BZIP2)" .config
+
+          # Step 2: Patch .config directly for LZO + no DEBUG_INFO
+          # CRITICAL: Do NOT run olddefconfig after this - it will revert LZO back to GZIP
+          sed -i '/CONFIG_KERNEL_GZIP/d'  .config
+          sed -i '/CONFIG_KERNEL_BZIP2/d' .config
+          sed -i '/CONFIG_KERNEL_LZMA/d'  .config
+          sed -i '/CONFIG_KERNEL_XZ/d'    .config
+          sed -i '/CONFIG_KERNEL_LZ4/d'   .config
+          sed -i '/CONFIG_KERNEL_LZO/d'   .config
+          printf '\n# CONFIG_KERNEL_GZIP is not set\nCONFIG_KERNEL_LZO=y\nCONFIG_HAVE_KERNEL_LZO=y\nCONFIG_RD_LZO=y\n' >> .config
+
+          # Disable debug info (saves ~1MB)
+          sed -i '/CONFIG_DEBUG_INFO/d' .config
+          printf '\n# CONFIG_DEBUG_INFO is not set\n' >> .config
+
+          # Step 3: Verify (for log)
+          echo "=== Active kernel compression ==="
+          grep -E "CONFIG_KERNEL_(GZIP|LZO|XZ|LZ4|BZIP2|LZMA)" .config
+
+          # Step 4: Build directly - NO olddefconfig (it reverts LZO→GZIP via Kconfig selects)
           make -j$(nproc) zImage
           make -j$(nproc) dtbs
+
+          echo "=== Final zImage size ==="
           ls -lh arch/arm/boot/zImage
 
       - name: Upload Compact Kernel Artifact
