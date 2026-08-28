@@ -1,4 +1,4 @@
-name: Build Compact Android 12 Kernel with Camera Fix
+name: Build Super-Compact XZ Android 12 Kernel
 
 on: [push, workflow_dispatch]
 
@@ -9,7 +9,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential libncurses5-dev bison flex libssl-dev bc ccache git lzop lz4 device-tree-compiler
+          sudo apt install -y build-essential libncurses5-dev bison flex libssl-dev bc ccache git lzop lz4 xz-utils device-tree-compiler
 
       - name: Clone Google Android GCC 4.9 Toolchain
         run: |
@@ -19,38 +19,33 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/kOtusin/android_kernel_samsung_exynos3475.git -b lineage-19.1 kernel
 
-      - name: Apply All Patches and Build
+      - name: Apply Camera FLITE IRQ Sharing, DTS Standby & XZ Compression
         run: |
           cd kernel
 
-          # === CAMERA FIXES ===
-          # IRQF_SHARED on FIMC-LITE IRQ (fixes FD leak on /dev/video101)
+          # 1. Patch Camera FIMC-IS FLITE IRQF_SHARED (fixes FD leak on /dev/video101)
           find drivers/media/ -name "*flite*.c" -exec sed -i 's/request_irq(\([^,]*\), \([^,]*\), 0,/request_irq(\1, \2, IRQF_SHARED,/g' {} +
           find drivers/media/ -name "*sensor*.c" -exec sed -i 's/request_irq(\([^,]*\), \([^,]*\), 0,/request_irq(\1, \2, IRQF_SHARED,/g' {} +
 
-          # Camera GPIO Standby Pins to GPF0
+          # 2. Patch Device Tree Camera GPIO Standby Pins to GPF0
           find arch/arm/boot/dts/ -name "*3475*.dts*" -exec sed -i 's/gpio_standby = <&gpc2 [0-9] [0-9]>/gpio_standby = <\&gpf0 2 1>/g' {} +
 
-          # === KCONFIG: Patch compression default to LZO BEFORE make defconfig ===
-          # The kernel 3.x silentoldconfig aborts on unknown symbols added post-hoc.
-          # Solution: change the Kconfig default from GZIP to LZO, then defconfig picks it up.
-          sed -i 's/default KERNEL_GZIP/default KERNEL_LZO/' init/Kconfig
-          # Also patch arch/arm/Kconfig in case compression choice is there
-          sed -i 's/default KERNEL_GZIP/default KERNEL_LZO/' arch/arm/Kconfig 2>/dev/null || true
+          # 3. Force XZ Kernel Compression (Produces ~4.2MB zImage - fits easily in S-Boot buffer)
+          sed -i 's/default KERNEL_GZIP/default KERNEL_XZ/' init/Kconfig
+          sed -i 's/default KERNEL_GZIP/default KERNEL_XZ/' arch/arm/Kconfig 2>/dev/null || true
 
-          # === DEFCONFIG: Disable exFAT and DEBUG_INFO ===
+          # 4. Disable exFAT & DEBUG_INFO
           sed -i '/CONFIG_EXFAT_FS/d' arch/arm/configs/lineage-j1xlte_defconfig
           echo "# CONFIG_EXFAT_FS is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
           sed -i '/CONFIG_DEBUG_INFO/d' arch/arm/configs/lineage-j1xlte_defconfig
           echo "# CONFIG_DEBUG_INFO is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
 
-          # === BUILD ===
+          # Build defconfig
           export ARCH=arm
           export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/arm-linux-androideabi-
-
           make lineage-j1xlte_defconfig
 
-          echo "=== Active kernel compression ==="
+          echo "=== Active Compression ==="
           grep -E "CONFIG_KERNEL_(GZIP|LZO|XZ|LZ4|BZIP2|LZMA)" .config
 
           make -j$(nproc) zImage
@@ -59,10 +54,10 @@ jobs:
           echo "=== Final zImage size ==="
           ls -lh arch/arm/boot/zImage
 
-      - name: Upload Compact Kernel Artifact
+      - name: Upload Super-Compact Kernel Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: zImage-Camera-Compact
+          name: zImage-Camera-XZ-Compact
           path: |
             kernel/arch/arm/boot/zImage
             kernel/arch/arm/boot/dts/*.dtb
