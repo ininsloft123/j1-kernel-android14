@@ -1,4 +1,4 @@
-name: Build Android 14 Kernel for Galaxy J1 2016
+name: Build Android 12/14 Kernel with Camera & Wi-Fi Fix for Galaxy J1 2016
 
 on: [push, workflow_dispatch]
 
@@ -9,7 +9,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential libncurses5-dev bison flex libssl-dev bc ccache git lzop
+          sudo apt install -y build-essential libncurses5-dev bison flex libssl-dev bc ccache git lzop device-tree-compiler
 
       - name: Clone Google Android GCC 4.9 Toolchain
         run: |
@@ -19,41 +19,42 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/kOtusin/android_kernel_samsung_exynos3475.git -b lineage-19.1 kernel
 
-      - name: Apply Android 14, Force Permissive SELinux & Hardware Patches
+      - name: Apply Android 12/14 SELinux, Cgroups, Camera & Hardware Patches
         run: |
           cd kernel
 
-          # 0. Disable exFAT (API mismatches with 3.10 kernel, not needed for Android 14)
+          # 0. Disable exFAT (API mismatches with 3.10 kernel, not needed)
           sed -i 's/CONFIG_EXFAT_FS=y/# CONFIG_EXFAT_FS is not set/' arch/arm/configs/lineage-j1xlte_defconfig
           echo "# CONFIG_EXFAT_FS is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
 
-          # 1. Allow SELinux Policy version 34 (Android 14 requirement)
+          # 1. Allow SELinux Policy version 34
           sed -i 's/#define POLICYDB_VERSION_MAX.*/#define POLICYDB_VERSION_MAX 34/' security/selinux/ss/policydb.h
 
-          # 2. Force SELinux to always remain in PERMISSIVE mode (ignores Samsung S-Boot enforcing lock)
+          # 2. Force SELinux to always remain in PERMISSIVE mode
           sed -i 's/int selinux_enforcing;/int selinux_enforcing = 0;/' security/selinux/hooks.c
           sed -i 's/selinux_enforcing = enforcing ? 1 : 0;/selinux_enforcing = 0;/' security/selinux/hooks.c
           sed -i 's/selinux_enforcing = new_value;/selinux_enforcing = 0;/' security/selinux/selinuxfs.c
 
-          # 3. Extend syscall table to 444 entries (Android 14 Bionic requirement)
+          # 3. Extend syscall table to 444 entries
           sed -i 's/#define __NR_syscalls  (388)/#define __NR_syscalls  (444)/' arch/arm/include/asm/unistd.h
-
-          # 4. Add Android 14 missing syscall number defines
           printf '\n/* Android 14 syscalls backported */\n' >> arch/arm/include/uapi/asm/unistd.h
           printf '#define __NR_clone3       (__NR_SYSCALL_BASE+435)\n' >> arch/arm/include/uapi/asm/unistd.h
           printf '#define __NR_faccessat2   (__NR_SYSCALL_BASE+439)\n' >> arch/arm/include/uapi/asm/unistd.h
           printf '#define __NR_epoll_pwait2 (__NR_SYSCALL_BASE+441)\n' >> arch/arm/include/uapi/asm/unistd.h
 
-          # 5. Add 56 stub entries to calls.S (388 to 443)
           printf '\n/* Android 14 compat stubs (388-443) */\n' >> arch/arm/kernel/calls.S
           for i in $(seq 388 443); do
             echo "/* $i */	CALL(sys_ni_syscall)" >> arch/arm/kernel/calls.S
           done
 
-          # 6. Patch kernel version banner in init/version.c so uname() returns 4.14.180 to userspace
-          sed -i 's/UTS_RELEASE/"4.14.180"/' init/version.c
+          # 4. Patch Camera FIMC-IS FLITE IRQF_SHARED to fix request_irq(L0) collision
+          find drivers/media/ -name "*flite*.c" -exec sed -i 's/request_irq(\([^,]*\), \([^,]*\), 0,/request_irq(\1, \2, IRQF_SHARED,/' {} + 2>/dev/null || true
+          find drivers/media/ -name "*sensor*.c" -exec sed -i 's/request_irq(\([^,]*\), \([^,]*\), 0,/request_irq(\1, \2, IRQF_SHARED,/' {} + 2>/dev/null || true
 
-          # 7. Enable Persistent Ramoops Logger & Android 14 Cgroup configs
+          # 5. Patch Device Tree Camera GPIO Standby Pins to GPF0
+          find arch/arm/boot/dts/ -name "*3475*.dts*" -exec sed -i 's/gpio_standby = <&gpc2 [0-9] [0-9]>/gpio_standby = <\&gpf0 2 1>/' {} + 2>/dev/null || true
+
+          # 6. Enable Persistent Ramoops Logger & Android 12/14 Cgroup configs
           echo "CONFIG_SECURITY_SELINUX_BOOTPARAM=y" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE=0" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo "CONFIG_SECURITY_SELINUX_DEVELOP=y" >> arch/arm/configs/lineage-j1xlte_defconfig
@@ -70,16 +71,19 @@ jobs:
           echo "CONFIG_CMDLINE_EXTEND=y" >> arch/arm/configs/lineage-j1xlte_defconfig
           echo 'CONFIG_CMDLINE="ramoops.mem_address=0x26000000 ramoops.mem_size=0x200000 ramoops.console_size=0x100000 ramoops.dump_oops=1 androidboot.selinux=permissive enforcing=0"' >> arch/arm/configs/lineage-j1xlte_defconfig
 
-      - name: Compile Kernel zImage
+      - name: Compile Kernel zImage and DTBs
         run: |
           cd kernel
           export ARCH=arm
           export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/arm-linux-androideabi-
           make lineage-j1xlte_defconfig
           make -j$(nproc) zImage
+          make -j$(nproc) dtbs
 
-      - name: Upload Kernel Artifact
+      - name: Upload Kernel & DTB Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: zImage-Android14-Permissive
-          path: kernel/arch/arm/boot/zImage
+          name: zImage-Camera-Fixed
+          path: |
+            kernel/arch/arm/boot/zImage
+            kernel/arch/arm/boot/dts/*.dtb
