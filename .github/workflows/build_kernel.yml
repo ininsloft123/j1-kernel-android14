@@ -1,4 +1,4 @@
-name: Build Super-Compact XZ Android 12 Kernel
+name: Build Lightweight Android 12 Kernel with Camera Fix
 
 on: [push, workflow_dispatch]
 
@@ -19,7 +19,7 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/kOtusin/android_kernel_samsung_exynos3475.git -b lineage-19.1 kernel
 
-      - name: Apply Camera FLITE IRQ Sharing, DTS Standby & XZ Compression
+      - name: Apply Camera FLITE IRQ Sharing, DTS Standby & Size Trimming
         run: |
           cd kernel
 
@@ -30,34 +30,48 @@ jobs:
           # 2. Patch Device Tree Camera GPIO Standby Pins to GPF0
           find arch/arm/boot/dts/ -name "*3475*.dts*" -exec sed -i 's/gpio_standby = <&gpc2 [0-9] [0-9]>/gpio_standby = <\&gpf0 2 1>/g' {} +
 
-          # 3. Force XZ Kernel Compression (Produces ~4.2MB zImage - fits easily in S-Boot buffer)
-          sed -i 's/default KERNEL_GZIP/default KERNEL_XZ/' init/Kconfig
-          sed -i 's/default KERNEL_GZIP/default KERNEL_XZ/' arch/arm/Kconfig 2>/dev/null || true
+          # 3. Strip heavy debug features from defconfig to keep zImage <= 4.8MB
+          DEFCONFIG="arch/arm/configs/lineage-j1xlte_defconfig"
 
-          # 4. Disable exFAT & DEBUG_INFO
-          sed -i '/CONFIG_EXFAT_FS/d' arch/arm/configs/lineage-j1xlte_defconfig
-          echo "# CONFIG_EXFAT_FS is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
-          sed -i '/CONFIG_DEBUG_INFO/d' arch/arm/configs/lineage-j1xlte_defconfig
-          echo "# CONFIG_DEBUG_INFO is not set" >> arch/arm/configs/lineage-j1xlte_defconfig
+          # Disable FTRACE & Function Graph Tracing (Saves ~700KB)
+          sed -i '/CONFIG_FTRACE/d' $DEFCONFIG
+          sed -i '/CONFIG_FUNCTION_TRACER/d' $DEFCONFIG
+          sed -i '/CONFIG_DYNAMIC_FTRACE/d' $DEFCONFIG
+          sed -i '/CONFIG_FUNCTION_GRAPH_TRACER/d' $DEFCONFIG
+          echo "# CONFIG_FTRACE is not set" >> $DEFCONFIG
 
-          # Build defconfig
+          # Disable Debug info & Lockdep (Saves ~400KB)
+          sed -i '/CONFIG_DEBUG_INFO/d' $DEFCONFIG
+          sed -i '/CONFIG_DEBUG_KERNEL/d' $DEFCONFIG
+          sed -i '/CONFIG_LOCKDEP/d' $DEFCONFIG
+          sed -i '/CONFIG_PROVE_LOCKING/d' $DEFCONFIG
+          echo "# CONFIG_DEBUG_INFO is not set" >> $DEFCONFIG
+          echo "# CONFIG_LOCKDEP is not set" >> $DEFCONFIG
+
+          # Disable exFAT & unused filesystems
+          sed -i '/CONFIG_EXFAT_FS/d' $DEFCONFIG
+          echo "# CONFIG_EXFAT_FS is not set" >> $DEFCONFIG
+
+          # Disable unused DVB / TV tuners in media
+          sed -i '/CONFIG_DVB/d' $DEFCONFIG
+          echo "# CONFIG_DVB_CORE is not set" >> $DEFCONFIG
+
+      - name: Compile Lightweight Kernel and DTBs
+        run: |
+          cd kernel
           export ARCH=arm
           export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/arm-linux-androideabi-
           make lineage-j1xlte_defconfig
-
-          echo "=== Active Compression ==="
-          grep -E "CONFIG_KERNEL_(GZIP|LZO|XZ|LZ4|BZIP2|LZMA)" .config
-
           make -j$(nproc) zImage
           make -j$(nproc) dtbs
 
           echo "=== Final zImage size ==="
           ls -lh arch/arm/boot/zImage
 
-      - name: Upload Super-Compact Kernel Artifact
+      - name: Upload Lightweight Kernel Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: zImage-Camera-XZ-Compact
+          name: zImage-Camera-Lightweight
           path: |
             kernel/arch/arm/boot/zImage
             kernel/arch/arm/boot/dts/*.dtb
